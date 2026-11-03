@@ -1,0 +1,62 @@
+# Builds whisper.cpp with the Vulkan backend for Windows x64 (AMD/Intel GPUs).
+# The official whisper.cpp releases ship only CPU and CUDA builds for Windows.
+# Start by hand: Actions → "whisper.cpp Vulkan build" → Run workflow.
+name: whisper.cpp Vulkan build
+
+on:
+  workflow_dispatch:
+    inputs:
+      whisper_tag:
+        description: whisper.cpp tag to build
+        default: v1.9.5
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  VULKAN_VERSION: 1.4.313.2
+
+jobs:
+  windows-vulkan:
+    runs-on: windows-2022
+    steps:
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          curl.exe -L -o "$env:RUNNER_TEMP\VulkanSDK.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          & "$env:RUNNER_TEMP\VulkanSDK.exe" --accept-licenses --default-answer --confirm-command install | Out-Null
+          "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "C:\VulkanSDK\$env:VULKAN_VERSION\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Get whisper.cpp
+        shell: pwsh
+        run: git clone --depth 1 --branch "${{ inputs.whisper_tag }}" https://github.com/ggml-org/whisper.cpp src
+
+      - name: Build
+        shell: pwsh
+        working-directory: src
+        run: |
+          cmake -B build -DGGML_VULKAN=ON -DBUILD_SHARED_LIBS=ON -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+          cmake --build build --config Release -j 4
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item src\build\bin\Release\*.exe, src\build\bin\Release\*.dll out\
+          Copy-Item src\LICENSE out\LICENSE-whisper.cpp.txt
+          Compress-Archive -Path out\* -DestinationPath whisper-bin-win-vulkan-x64.zip
+          Get-ChildItem out | Format-Table Name, Length
+
+      - name: Smoke test
+        shell: pwsh
+        run: out\whisper-cli.exe --help | Select-Object -First 5
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: whisper-vulkan-${{ inputs.whisper_tag }}
+          name: whisper.cpp ${{ inputs.whisper_tag }} Vulkan (Windows x64)
+          body: whisper.cpp ${{ inputs.whisper_tag }} built with GGML_VULKAN=ON for AMD/Intel GPUs. MIT license.
+          files: whisper-bin-win-vulkan-x64.zip
