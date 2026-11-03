@@ -1,6 +1,6 @@
 # videocutter-tools
 
-Prebuilt helper programs for Video KI Cutter.
+Prebuilt helper programs for VCX - Video KI Cutter X Pro.
 
 ## whisper.cpp with Vulkan (Windows x64)
 
